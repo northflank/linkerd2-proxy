@@ -65,9 +65,9 @@ impl<N> NewAccessLog<N> {
 }
 
 impl<N, T> NewService<T> for NewAccessLog<N>
-where
-    T: Param<tls::ConditionalServerTls> + Param<Remote<ClientAddr>>,
-    N: NewService<T>,
+    where
+        T: Param<tls::ConditionalServerTls> + Param<Remote<ClientAddr>>,
+        N: NewService<T>,
 {
     type Service = AccessLogContext<N::Service>;
 
@@ -87,8 +87,8 @@ where
 }
 
 impl<S, B1, B2> svc::Service<http::Request<B1>> for AccessLogContext<S>
-where
-    S: svc::Service<http::Request<B1>, Response = http::Response<B2>>,
+    where
+        S: svc::Service<http::Request<B1>, Response = http::Response<B2>>,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -118,12 +118,18 @@ where
                 .unwrap_or_default()
         };
 
+        let path = match request.uri().path_and_query() {
+            Some(v) => v.as_str(),
+            _ => ""
+        };
+
         let span = span!(target: TRACE_TARGET, Level::INFO, "http",
             client.addr = %self.client_addr,
             client.id = self.client_id.as_ref().map(|n| n.as_str()).unwrap_or("-"),
             timestamp = %now(),
             method = request.method().as_str(),
             uri =  %request.uri(),
+            path,
             version = ?request.version(),
             trace_id = trace_id(),
             request_bytes = get_header(http::header::CONTENT_LENGTH),
@@ -133,6 +139,8 @@ where
             processing_ns = field::Empty,
             user_agent = get_header(http::header::USER_AGENT),
             host = get_header(http::header::HOST),
+            x_forwarded_for = get_header(http::header::HeaderName::from_static("x-forwarded-for")),
+            requested_server_name = get_header(http::header::HeaderName::from_static("x-envoy-decorator-operation")),
         );
 
         // The access log span is only enabled by the `tracing` subscriber if
@@ -157,8 +165,8 @@ where
 }
 
 impl<F, B2> Future for AccessLogFuture<F>
-where
-    F: TryFuture<Ok = http::Response<B2>>,
+    where
+        F: TryFuture<Ok = http::Response<B2>>,
 {
     type Output = Result<F::Ok, F::Error>;
 
@@ -193,9 +201,9 @@ where
             .headers()
             .get(http::header::CONTENT_LENGTH)
             .and_then(|x| x.to_str().ok())
-            .map(|x| span.record("response_bytes", x));
+            .map(|x| span.record("response_bytes", &x));
 
-        span.record("status", response.status().as_u16());
+        span.record("status", &response.status().as_u16());
         span.record("total_ns", &field::display(total_ns));
         span.record("processing_ns", &field::display(processing_ns));
 
